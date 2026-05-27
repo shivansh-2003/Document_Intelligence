@@ -58,6 +58,22 @@ class NormalizedTable:
     metadata: Dict[str, Any] = field(default_factory=dict)
     quality_score: float = 1.0             # 0.0 - 1.0
 
+@dataclass
+class ExtractedImageTable:
+    """
+    Input contract from the Image Parser → Table Parser.
+    Contains a raw 2D grid extracted from an image (via VLM/OCR)
+    plus provenance metadata. The Table Parser normalizes this
+    exactly like a native text table.
+    """
+    grid: List[List[str]]              # 2D cell array from VLM/OCR
+    source: str                        # Original file path or URL
+    source_type: str                   # e.g. 'pdf_image', 'pptx_image', 'docx_image', 'web_image'
+    page_or_slide: Optional[int]
+    title_or_caption: Optional[str]
+    surrounding_context: Optional[str] = None
+    extraction_method: str = "vlm_ocr"
+    confidence: float = 1.0
 
 class TableParser:
     """
@@ -315,6 +331,44 @@ class TableParser:
                 warnings.warn(f"BeautifulSoup fallback failed: {e}")
 
         return tables
+
+    
+    def normalize_from_image_table(
+        self,
+        data: ExtractedImageTable,
+        table_index: int = 0,
+    ) -> NormalizedTable:
+        """
+        Normalize a table that was extracted from an image by an external
+        Image Parser. This is the ONLY entry point the Image Parser should
+        call. It routes to the same _normalize_raw_grid() used by native
+        text tables so all tables share one normalization path.
+        """
+        # Route to the existing normalization engine
+        nt = self._normalize_raw_grid(
+            grid=data.grid,
+            source=data.source,
+            source_type=data.source_type,
+            table_index=table_index,
+            page=data.page_or_slide,
+            title=data.title_or_caption,
+        )
+
+        # Inject image-specific provenance into metadata
+        nt.metadata["extraction_method"] = data.extraction_method
+        nt.metadata["vlm_confidence"] = data.confidence
+        if data.surrounding_context:
+            nt.metadata["surrounding_context"] = data.surrounding_context
+
+        # Image tables are higher-risk: warn if quality is poor
+        if nt.quality_score < self.min_quality:
+            warnings.warn(
+                f"Image table {table_index} from {data.source} failed quality "
+                f"check (score={nt.quality_score}, min={self.min_quality}). "
+                f"Consider re-OCR with a stronger VLM or manual review."
+            )
+
+        return nt
 
     # =====================================================================
     #  NORMALIZATION
@@ -601,15 +655,15 @@ def normalize_tables_for_chunking(
         # Optional: LLM contextual enrichment (like the Medium article)
         if enrich_with_llm and llm_client is not None:
             prompt = f"""Given this table and document context, write a 2-sentence 
-description of what this table contains. Then keep the markdown table.
+            description of what this table contains. Then keep the markdown table.
 
-Document context:
-{document_context[:4000]}
+            Document context:
+            {document_context[:4000]}
 
-Table:
-{tbl.markdown}
+            Table:
+            {tbl.markdown}
 
-Description:"""
+            Description:"""
             try:
                 # Generic invoke pattern
                 if hasattr(llm_client, "invoke"):
@@ -640,22 +694,5 @@ Description:"""
     return chunks
 
 
-# =====================================================================
-#  EXAMPLE USAGE (uncomment to run)
-# =====================================================================
-if __name__ == "__main__":
-    # --- Single file ---
-    # chunks = normalize_tables_for_chunking("./report.pdf")
-    # for c in chunks:
-    #     print(c["text"][:300], "\n---")
 
-    # --- With LLM enrichment (Ollama example) ---
-    # from langchain_ollama import ChatOllama
-    # llm = ChatOllama(model="gpt-oss:20b")
-    # chunks = normalize_tables_for_chunking(
-    #     "./report.pdf",
-    #     enrich_with_llm=True,
-    #     llm_client=llm,
-    #     document_context="Meta Platforms Q2 2024 earnings report",
-    # )
-    pass
+   

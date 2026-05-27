@@ -12,7 +12,6 @@ chromadb>=0.5.0
 faiss-cpu>=1.8.0
 
 # --- Document Extraction ---
-unstructured[all-docs]>=0.15.0
 pymupdf>=1.24.0
 
 # --- Embeddings ---
@@ -20,8 +19,18 @@ sentence-transformers>=3.0.0
 
 # --- Utilities ---
 nltk>=3.8.0
-pandas>=2.0.0
+
 
 # --- Optional: if you want to compare with OpenAI later ---
 # openai>=1.30.0
 # langchain-openai>=0.2.0
+
+pandas
+unstructured
+requests
+beautifulsoup4
+pdfplumber
+python-pptx
+python-docx
+
+
