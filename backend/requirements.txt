@@ -1,0 +1,27 @@
+# High-Precision RAG for Table-Heavy Documents
+# Local LLM (Ollama) + Hugging Face Embeddings + Chroma/FAISS
+
+# --- Core LangChain ---
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-ollama>=0.2.0
+langchain-huggingface>=0.1.0
+
+# --- Vector Stores ---
+chromadb>=0.5.0
+faiss-cpu>=1.8.0
+
+# --- Document Extraction ---
+unstructured[all-docs]>=0.15.0
+pymupdf>=1.24.0
+
+# --- Embeddings ---
+sentence-transformers>=3.0.0
+
+# --- Utilities ---
+nltk>=3.8.0
+pandas>=2.0.0
+
+# --- Optional: if you want to compare with OpenAI later ---
+# openai>=1.30.0
+# langchain-openai>=0.2.0
