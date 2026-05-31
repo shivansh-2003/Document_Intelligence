@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+unstructured[pdf,docx,pptx]
+crawl4ai
+langchain-text-splitters
+langdetect
+nltk
+tiktoken
+ollama
+pillow
