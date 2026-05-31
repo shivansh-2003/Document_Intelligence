@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Optional
 from urllib.parse import urljoin
+
+logger = logging.getLogger(__name__)
 
 try:
     from crawl4ai import AsyncWebCrawler, CrawlerRunConfig, CacheMode
@@ -55,18 +58,23 @@ class WebParser:
 
     async def parse_async(self, url: str) -> ParsedWebDocument:
         """Crawl *url* and return a ParsedWebDocument. Crawl4AI is async-native."""
-
+        logger.info("Starting web crawl: %r use_pruning_filter=%s extract_images=%s",
+                    url, self.use_pruning_filter, self.extract_images)
         config = self._build_config()
 
         async with AsyncWebCrawler(verbose=self.verbose) as crawler:
             crawl_result = await crawler.arun(url=url, config=config)
 
         if not crawl_result.success:
+            logger.error("Crawl failed for %r: %s", url, crawl_result.error_message)
             raise RuntimeError(
                 f"Crawl failed for {url!r}: {crawl_result.error_message}"
             )
 
+        logger.info("Crawl succeeded for %r, partitioning content", url)
         self._result = self._partition(crawl_result)
+        logger.info("Web parse complete: %d texts, %d tables, %d images",
+                    len(self._result.texts), len(self._result.tables), len(self._result.images))
         return self._result
 
     def parse(self, url: str) -> ParsedWebDocument:

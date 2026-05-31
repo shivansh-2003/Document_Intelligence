@@ -1,9 +1,12 @@
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 from unstructured.partition.text import partition_text
 from unstructured.documents.elements import Table, Image, CompositeElement, Text
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -19,8 +22,12 @@ class TextParser:
 
     def parse(self, file_path: str | Path) -> ParsedDocument:
         file_path = Path(file_path)
+        logger.info("Partitioning text file: %s", file_path.name)
         elements = partition_text(filename=str(file_path))
+        logger.info("Text file partitioned into %d raw elements", len(elements))
         self._result = self._partition_elements(elements)
+        logger.info("Text parse complete: %d texts, %d tables, %d images",
+                    len(self._result.texts), len(self._result.tables), len(self._result.images))
         return self._result
 
     def _partition_elements(self, elements: list) -> ParsedDocument:

@@ -14,12 +14,15 @@ All metadata is extracted without LLM calls (pure heuristics + regex).
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +68,7 @@ def _markdown_splitter():
             from langchain.text_splitter import MarkdownHeaderTextSplitter
             return MarkdownHeaderTextSplitter
         except ImportError:
+            logger.warning("MarkdownHeaderTextSplitter not available; will fall back to recursive splitter")
             return None
 
 
@@ -77,6 +81,7 @@ def _recursive_splitter():
             from langchain.text_splitter import RecursiveCharacterTextSplitter
             return RecursiveCharacterTextSplitter
         except ImportError:
+            logger.warning("RecursiveCharacterTextSplitter not available; will use naive word-split fallback")
             return None
 
 
@@ -404,19 +409,25 @@ def chunk_text(
         extended `context_text`, and a full `metadata` dict.
     """
     if not texts:
+        logger.info("chunk_text called with empty texts list; returning []")
         return []
 
     combined = "\n\n".join(t.strip() for t in texts if t.strip())
     if not combined:
+        logger.info("chunk_text: all texts were blank after stripping; returning []")
         return []
 
     strategy = _detect_strategy(combined, source_type)
+    logger.info("Text chunking strategy selected: %r for source_type=%r", strategy, source_type)
 
     if strategy == "slide_level":
-        return _chunk_slide_level(texts, source_type, doc_meta)
+        chunks = _chunk_slide_level(texts, source_type, doc_meta)
     elif strategy == "sentence_window":
-        return _chunk_sentence_window(texts, source_type, doc_meta)
+        chunks = _chunk_sentence_window(texts, source_type, doc_meta)
     elif strategy == "markdown_header":
-        return _chunk_markdown_header(texts, source_type, doc_meta)
+        chunks = _chunk_markdown_header(texts, source_type, doc_meta)
     else:
-        return _chunk_recursive(texts, source_type, doc_meta)
+        chunks = _chunk_recursive(texts, source_type, doc_meta)
+
+    logger.info("chunk_text produced %d chunks using strategy %r", len(chunks), strategy)
+    return chunks

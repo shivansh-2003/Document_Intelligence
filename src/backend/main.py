@@ -10,12 +10,37 @@ Swagger UI:  http://localhost:8000/docs
 ReDoc:       http://localhost:8000/redoc
 """
 
+import logging
+import logging.config
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.ingest import ingest_router
+
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+        },
+    },
+    "root": {
+        "level": "INFO",
+        "handlers": ["console"],
+    },
+})
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -24,11 +49,9 @@ from api.ingest import ingest_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: pre-warm anything expensive here (DB pool, model load, etc.)
-    print("[startup] Document Intelligence API is ready.")
+    logger.info("Document Intelligence API starting up.")
     yield
-    # Shutdown: close connections, flush buffers, etc.
-    print("[shutdown] Cleaning up.")
+    logger.info("Document Intelligence API shutting down.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

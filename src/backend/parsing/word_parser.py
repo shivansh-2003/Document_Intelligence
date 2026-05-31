@@ -1,9 +1,12 @@
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 from unstructured.partition.docx import partition_docx
 from unstructured.documents.elements import Table, Image, CompositeElement, Text
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -19,8 +22,12 @@ class WordParser:
 
     def parse(self, file_path: str | Path) -> ParsedDocument:
         file_path = Path(file_path)
+        logger.info("Partitioning DOCX: %s", file_path.name)
         elements = partition_docx(filename=str(file_path))
+        logger.info("DOCX partitioned into %d raw elements", len(elements))
         self._result = self._partition_elements(elements)
+        logger.info("DOCX parse complete: %d texts, %d tables, %d images",
+                    len(self._result.texts), len(self._result.tables), len(self._result.images))
         return self._result
 
     def _partition_elements(self, elements: list) -> ParsedDocument:
