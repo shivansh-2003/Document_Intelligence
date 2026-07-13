@@ -19,6 +19,7 @@ import logging
 import math
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
@@ -326,14 +327,30 @@ def _dual_chunk_table(
 # Public API
 # ---------------------------------------------------------------------------
 
-def process_tables(
-    tables:     list[str],
+def _process_one_table(
+    idx: int,
+    md: str,
     source_type: str,
-    doc_meta:   dict,
-    llm_client: Any = None,
+    doc_meta: dict,
+    llm_client: Any,
+) -> tuple[int, list[TableChunk]]:
+    """Summarize and chunk a single table. Returns (original_index, chunks)."""
+    logger.info("Processing table %d (%d chars)", idx, len(md))
+    summary = _get_summary(md, llm_client)
+    chunks = _dual_chunk_table(md, idx, source_type, doc_meta, summary)
+    logger.info("Table %d produced %d chunks", idx, len(chunks))
+    return idx, chunks
+
+
+def process_tables(
+    tables:      list[str],
+    source_type: str,
+    doc_meta:    dict,
+    llm_client:  Any = None,
+    max_workers: int = 4,
 ) -> list[TableChunk]:
     """
-    Chunk and tag tables from a parsed document.
+    Chunk and tag tables from a parsed document — tables processed in parallel.
 
     Args:
         tables:      Markdown table strings from ParsedDocument.tables.
@@ -345,26 +362,41 @@ def process_tables(
                      "ollama"→ qwen3.6 with default tag
                      {"backend":"ollama","model":"qwen3.6:27b"} → specific tag
                      callable→ custom function
+        max_workers: Thread-pool size for parallel LLM calls (default 4).
 
     Returns:
-        List of TableChunk objects (1 full_table + N row_group per table).
+        List of TableChunk objects (1 full_table + N row_group per table),
+        in the same order as the input tables.
     """
     if not tables:
         logger.info("process_tables: no tables to process")
         return []
 
-    logger.info("process_tables: processing %d table(s) (llm_client=%s)", len(tables), llm_client is not None)
+    # Filter blanks upfront, keep original index for ordering.
+    valid: list[tuple[int, str]] = [
+        (idx, md.strip()) for idx, md in enumerate(tables) if md.strip()
+    ]
+    logger.info("process_tables: %d table(s) to process in parallel (max_workers=%d)",
+                len(valid), max_workers)
+
+    results: dict[int, list[TableChunk]] = {}
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(valid))) as pool:
+        futures = {
+            pool.submit(_process_one_table, idx, md, source_type, doc_meta, llm_client): idx
+            for idx, md in valid
+        }
+        for future in as_completed(futures):
+            try:
+                idx, chunks = future.result()
+                results[idx] = chunks
+            except Exception as exc:
+                idx = futures[future]
+                logger.exception("Table %d processing failed: %s", idx, exc)
+
+    # Reassemble in original order.
     all_chunks: list[TableChunk] = []
-    for idx, md in enumerate(tables):
-        md = md.strip()
-        if not md:
-            logger.debug("Skipping empty table at index %d", idx)
-            continue
-        logger.info("Processing table %d/%d (%d chars)", idx + 1, len(tables), len(md))
-        summary = _get_summary(md, llm_client)
-        new_chunks = _dual_chunk_table(md, idx, source_type, doc_meta, summary)
-        logger.info("Table %d produced %d chunks (full_table + row_groups)", idx, len(new_chunks))
-        all_chunks.extend(new_chunks)
+    for idx, _ in valid:
+        all_chunks.extend(results.get(idx, []))
 
     logger.info("process_tables complete: %d total table chunks", len(all_chunks))
     return all_chunks

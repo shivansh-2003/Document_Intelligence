@@ -9,3 +9,4 @@ nltk
 tiktoken
 ollama
 pillow
+python-multipart
