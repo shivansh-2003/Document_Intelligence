@@ -1,33 +1,54 @@
-# cell 2 — schema + common helper. Partition only. No collapsing, no dropping.
-from collections import Counter
-from pathlib import Path
+# utils/parsing_utils.py
+from uuid import uuid4
 from pydantic import BaseModel
 from unstructured.documents.elements import Element
 
+
+class ElementMetadata(BaseModel):
+    filetype: str | None = None
+    languages: list[str] | None = None
+    page_number: int | None = None
+    text_as_html: str | None = None
+    image_base64: str | None = None
+    image_mime_type: str | None = None
+    filename: str | None = None
+    data_source: dict = {}
+
+
 class RawElement(BaseModel):
-    idx: int                        # reading order — the whole point
-    category: str                   # raw unstructured category, untouched
+    idx: int                        # reading order — ours, not unstructured's, kept for the pipeline
+    type: str                       # el.category: "Table", "Image", "NarrativeText", ...
+    element_id: str
     text: str = ""
-    html: str | None = None         # Table -> text_as_html
-    image_b64: str | None = None    # Image/Table -> base64 payload (pdf)
-    page: int | None = None
-    source: str
+    metadata: ElementMetadata
+
 
 def to_raw(elements: list[Element], path: str) -> list[RawElement]:
-    """unstructured Elements -> ordered RawElements. Order preserved, nothing judged."""
-    p = Path(path).name
-    return [
-        RawElement(
+    """unstructured Elements -> ordered RawElements, unstructured-shaped."""
+    from pathlib import Path
+    fname = Path(path).name
+    out = []
+    for i, el in enumerate(elements):
+        m = el.metadata
+        out.append(RawElement(
             idx=i,
-            category=el.category,
-            text=(el.text or ""),
-            html=getattr(el.metadata, "text_as_html", None),
-            image_b64=getattr(el.metadata, "image_base64", None),
-            page=getattr(el.metadata, "page_number", None),
-            source=p,
-        )
-        for i, el in enumerate(elements)
-    ]
+            type=el.category,
+            element_id=getattr(el, "id", None) or uuid4().hex,
+            text=el.text or "",
+            metadata=ElementMetadata(
+                filetype=getattr(m, "filetype", None),
+                languages=getattr(m, "languages", None),
+                page_number=getattr(m, "page_number", None),
+                text_as_html=getattr(m, "text_as_html", None),
+                image_base64=getattr(m, "image_base64", None),
+                image_mime_type=getattr(m, "image_mime_type", None),
+                filename=fname,
+                data_source={},
+            ),
+        ))
+    return out
 
-def insight(els: list[RawElement]) -> Counter:
-    return Counter(e.category for e in els)   # Title: 208, Table: 72, Image: 3, ...
+
+def insight(els: list[RawElement]) -> "Counter[str]":
+    from collections import Counter
+    return Counter(e.type for e in els)
