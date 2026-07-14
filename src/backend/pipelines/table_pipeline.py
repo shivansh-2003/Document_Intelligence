@@ -6,15 +6,28 @@ from utils.parsing_utils import RawElement
 
 logger = logging.getLogger(__name__)
 
-TABLE_PROMPT_TEMPLATE = """Summarize this HTML table for retrieval in a RAG system.
-State row/column count, what the columns represent, and the key figures or trend —
-not a cell-by-cell transcript. No preamble.
+TABLE_PROMPT_TEMPLATE = """You are summarizing a table for a RAG retrieval system. Someone will search for
+this table using natural language — your summary is the only thing that gets embedded and matched.
+
+Write a dense paragraph that includes, in order:
+1. What the table is about (its subject, inferred from headers/captions/context) — one sentence.
+2. Structure: row and column count, what each column represents.
+3. The specific standout values — the highest, lowest, first, last, or otherwise notable figures,
+   named explicitly with their row/column label attached (e.g. "Platform revenue reached $157,166K
+   in 2024, up from $147,509K in 2023" — not "revenue increased").
+4. Any trend or comparison the numbers show, only if the data actually supports it — don't invent one.
+
+Rules:
+- Every number you cite must appear in the table exactly as shown. Do not compute, round, or infer values.
+- No preamble ("This table shows..."), no markdown, no bullet points. Plain prose only.
+- If the table is mostly blank/structural (e.g. a form template), say so plainly instead of padding.
 
 Table HTML:
 {html}"""
 
 def build_table_prompt(html: str) -> str:
     return TABLE_PROMPT_TEMPLATE.format(html=html)
+    
 def describe_table(el: RawElement) -> RawElement:
     if el.type != "Table" or not el.metadata.text_as_html:
         return el

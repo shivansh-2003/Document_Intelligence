@@ -1,12 +1,23 @@
 # text_pipeline.py
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pydantic import BaseModel
+
 from utils.parsing_utils import RawElement
 
 DROP = {"Header", "Footer", "UncategorizedText"}
 TEXT_TYPES = {"NarrativeText", "Formula", "ListItem"}
 
+MAX_CHARS = 2000
+OVERLAP = 200
+
 
 class ChunkMetadata(BaseModel):
+    # identity — stamped by parsing_service._tag(), required before indexing
+    chunk_id: str | None = None
+    doc_id: str | None = None
+    dept_id: str | None = None
+    doc_type: str | None = None
+    # provenance — derived during parsing
     filename: str | None = None
     page_number: int | None = None          # text chunks: page of the Title/first element
     pages: list[int] = []                    # text chunks spanning multiple pages
@@ -51,6 +62,7 @@ def _table_image_chunk(el: RawElement) -> Chunk:
         metadata=ChunkMetadata(
             filename=m.filename,
             page_number=m.page_number,
+            pages=[m.page_number] if m.page_number is not None else [],
             element_ids=[el.element_id],
             text_as_html=m.text_as_html,
             image_base64=m.image_base64,
@@ -71,7 +83,10 @@ def group_by_title(elements: list[RawElement]) -> list[Chunk]:
                 metadata=ChunkMetadata(
                     filename=buf_filename,
                     page_number=buf_pages[0] if buf_pages else None,
-                    pages=sorted(set(buf_pages)),
+                    # Drop None before sorting: txt/md/html/url have no pagination, so
+                    # every page_number is None. sorted({None}) is a silent [None] that
+                    # fails list[int] validation; a mixed [None, 3] raises TypeError.
+                    pages=sorted({p for p in buf_pages if p is not None}),
                     element_ids=buf_ids,
                 ),
             ))
@@ -98,7 +113,30 @@ def group_by_title(elements: list[RawElement]) -> list[Chunk]:
     return sorted(chunks, key=lambda c: c.idx)
 
 
+def split_oversized(chunks: list[Chunk], max_chars: int = MAX_CHARS, overlap: int = OVERLAP) -> list[Chunk]:
+    """Size ceiling for text chunks.
+
+    group_by_title relies on Title cadence to keep chunks embeddable. A .txt file can
+    contain zero detected Titles, in which case every NarrativeText folds into one
+    buffer and you get a single 200k-char chunk the embedder silently truncates.
+    No-op for well-structured PDF/DOCX; the safety net for txt/md/html.
+
+    Sub-chunks inherit the parent's idx (sort is stable, so order holds), title, and
+    element_ids — citation tracking still resolves to the source elements.
+    Tables and images are never split: a half table is not a table.
+    """
+    splitter = RecursiveCharacterTextSplitter(chunk_size=max_chars, chunk_overlap=overlap)
+    out: list[Chunk] = []
+    for c in chunks:
+        if c.kind != "text" or len(c.text) <= max_chars:
+            out.append(c)
+            continue
+        out.extend(c.model_copy(update={"text": part}, deep=True)
+                   for part in splitter.split_text(c.text))
+    return out
+
+
 def normalize_document(elements: list[RawElement]) -> list[Chunk]:
     els = filter_elements(elements)
     els = attach_captions(els)
-    return group_by_title(els)
+    return split_oversized(group_by_title(els))

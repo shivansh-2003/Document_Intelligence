@@ -1,5 +1,7 @@
 # utils/parsing_utils.py
+from collections import Counter
 from uuid import uuid4
+
 from pydantic import BaseModel
 from unstructured.documents.elements import Element
 
@@ -7,12 +9,12 @@ from unstructured.documents.elements import Element
 class ElementMetadata(BaseModel):
     filetype: str | None = None
     languages: list[str] | None = None
-    page_number: int | None = None
-    text_as_html: str | None = None
-    image_base64: str | None = None
-    image_mime_type: str | None = None
-    filename: str | None = None
-    data_source: dict = {}
+    page_number: int | None = None          # None for txt/md/html — paginationless sources
+    category_depth: int | None = None       # Title elements: heading level (0 = h1, 1 = h2, ...)
+    text_as_html: str | None = None         # Table only
+    image_base64: str | None = None         # Image only
+    image_mime_type: str | None = None      # Image only
+    filename: str | None = None             # stamped by parsing_service, not here
 
 
 class RawElement(BaseModel):
@@ -23,10 +25,16 @@ class RawElement(BaseModel):
     metadata: ElementMetadata
 
 
-def to_raw(elements: list[Element], path: str) -> list[RawElement]:
-    """unstructured Elements -> ordered RawElements, unstructured-shaped."""
-    from pathlib import Path
-    fname = Path(path).name
+def to_raw(elements: list[Element]) -> list[RawElement]:
+    """unstructured Elements -> ordered RawElements, unstructured-shaped.
+
+    Source-agnostic on purpose. Every unstructured partitioner — pdf, docx, pptx,
+    text, md, html — emits the same Element categories, so this one function serves
+    all of them. It takes no path: filename is stamped by parsing_service, the only
+    layer that knows whether the source is a file, a URL, or an S3 key. Fields absent
+    for a given source (page_number on a .txt, image_base64 on html) come back None,
+    and the downstream pipelines already guard on that.
+    """
     out = []
     for i, el in enumerate(elements):
         m = el.metadata
@@ -39,16 +47,14 @@ def to_raw(elements: list[Element], path: str) -> list[RawElement]:
                 filetype=getattr(m, "filetype", None),
                 languages=getattr(m, "languages", None),
                 page_number=getattr(m, "page_number", None),
+                category_depth=getattr(m, "category_depth", None),
                 text_as_html=getattr(m, "text_as_html", None),
                 image_base64=getattr(m, "image_base64", None),
                 image_mime_type=getattr(m, "image_mime_type", None),
-                filename=fname,
-                data_source={},
             ),
         ))
     return out
 
 
-def insight(els: list[RawElement]) -> "Counter[str]":
-    from collections import Counter
+def insight(els: list[RawElement]) -> Counter:
     return Counter(e.type for e in els)

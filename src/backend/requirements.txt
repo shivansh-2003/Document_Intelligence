@@ -10,3 +10,4 @@ tiktoken
 ollama
 pillow
 python-multipart
+faster-whisper

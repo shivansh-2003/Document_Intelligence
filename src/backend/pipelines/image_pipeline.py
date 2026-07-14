@@ -9,11 +9,28 @@ from utils.parsing_utils import RawElement
 
 logger = logging.getLogger(__name__)
 
-# image_utils.py — prompt only
-IMAGE_PROMPT = """Describe this image for retrieval in a RAG system.
-State the image type (diagram, chart, photo, technical drawing, graph, etc).
-Then give a dense factual description: what it shows, any text/labels visible,
-and any data values if it's a chart or graph. No preamble, no "the image shows"."""
+IMAGE_PROMPT = """You are describing an image for a RAG retrieval system. Someone will search for this
+image using natural language — your description is the only thing that gets embedded and matched.
+
+Respond with ONLY a JSON object, no markdown fences, no preamble, matching exactly this shape:
+{
+  "type": "<diagram|photo|chart|graph|technical drawing|screenshot|flowchart|table_image|other>",
+  "description": "<see rules below>",
+  "text_in_image": "<verbatim text/labels/values visible in the image, or empty string if none>"
+}
+
+Rules for "description":
+- Chart or graph: name the axes, the variables plotted, and the key values or trend (e.g. peak, minimum,
+  crossover point) with numbers attached where readable. Do not fabricate values you can't actually read.
+- Diagram or flowchart: describe the sequence/flow of steps or components in order, naming each labeled
+  node or box.
+- Photo or screenshot: describe what is concretely shown — objects, layout, visible UI elements — not
+  a subjective or aesthetic read.
+- One dense paragraph, 3-6 sentences. No hedging language ("it appears", "possibly") unless the image
+  is genuinely illegible — in that case say so directly instead of guessing.
+
+If the image is decorative (logo, divider, icon with no informational content), set "type" to "other"
+and keep "description" to one short sentence saying so — don't pad it."""
 
 
 class ImageDescription(BaseModel):
