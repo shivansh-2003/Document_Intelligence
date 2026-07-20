@@ -4,7 +4,7 @@ import logging
 import ollama
 from pydantic import BaseModel
 
-from utils.config import OLLAMA_HOST, OLLAMA_MODEL
+from core.config import OLLAMA_HOST, OLLAMA_MODEL
 
 logger = logging.getLogger(__name__)
 

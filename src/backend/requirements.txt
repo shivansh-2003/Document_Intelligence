@@ -7,3 +7,10 @@ ollama
 python-multipart
 faster-whisper
 markdown
+
+# Phase 1 — models + core
+sqlalchemy[asyncio]
+asyncpg
+pyjwt
+bcrypt
+python-dotenv

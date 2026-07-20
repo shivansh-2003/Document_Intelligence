@@ -15,15 +15,15 @@ from typing import AsyncIterator
 from faster_whisper import BatchedInferencePipeline, WhisperModel
 
 from pipelines.text_pipeline import Chunk, ChunkMetadata
+from core.config import WHISPER_BATCH, WHISPER_COMPUTE, WHISPER_DEVICE, WHISPER_MODEL
 from utils.async_utils import iter_in_thread
-from utils.config import WHISPER_BATCH, WHISPER_COMPUTE, WHISPER_DEVICE, WHISPER_MODEL
 
 logger = logging.getLogger(__name__)
 
 # Same code path on Mac dev and the CUDA worker pool -- only WHISPER_* env vars differ.
 # Mac (no Apple GPU backend in CTranslate2, CPU only):
 #   WHISPER_DEVICE=cpu WHISPER_COMPUTE=int8 WHISPER_MODEL=small WHISPER_BATCH=8
-# Prod (cuda worker, queue=video): defaults in utils/config.py.
+# Prod (cuda worker, queue=video): defaults in core/config.py.
 MAX_CHARS = 1500   # pack cap -- keeps each streamed chunk embeddable without a second split pass
 
 _model: BatchedInferencePipeline | None = None
