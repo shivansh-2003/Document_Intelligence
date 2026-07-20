@@ -10,7 +10,6 @@ class ElementMetadata(BaseModel):
     filetype: str | None = None
     languages: list[str] | None = None
     page_number: int | None = None          # None for txt/md/html — paginationless sources
-    category_depth: int | None = None       # Title elements: heading level (0 = h1, 1 = h2, ...)
     text_as_html: str | None = None         # Table only
     image_base64: str | None = None         # Image only
     image_mime_type: str | None = None      # Image only
@@ -47,7 +46,6 @@ def to_raw(elements: list[Element]) -> list[RawElement]:
                 filetype=getattr(m, "filetype", None),
                 languages=getattr(m, "languages", None),
                 page_number=getattr(m, "page_number", None),
-                category_depth=getattr(m, "category_depth", None),
                 text_as_html=getattr(m, "text_as_html", None),
                 image_base64=getattr(m, "image_base64", None),
                 image_mime_type=getattr(m, "image_mime_type", None),

@@ -25,6 +25,8 @@ class ChunkMetadata(BaseModel):
     text_as_html: str | None = None          # table only
     image_base64: str | None = None          # image only
     image_mime_type: str | None = None       # image only
+    start_sec: float | None = None           # audio only
+    end_sec: float | None = None             # audio only
 
 
 class Chunk(BaseModel):

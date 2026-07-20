@@ -10,7 +10,8 @@ from utils.parsing_utils import RawElement
 logger = logging.getLogger(__name__)
 
 IMAGE_PROMPT = """You are describing an image for a RAG retrieval system. Someone will search for this
-image using natural language — your description is the only thing that gets embedded and matched.
+image using natural language — your description is the only thing that gets embedded and matched, the
+image itself is not searchable.
 
 Respond with ONLY a JSON object, no markdown fences, no preamble, matching exactly this shape:
 {
@@ -19,23 +20,43 @@ Respond with ONLY a JSON object, no markdown fences, no preamble, matching exact
   "text_in_image": "<verbatim text/labels/values visible in the image, or empty string if none>"
 }
 
-Rules for "description":
-- Chart or graph: name the axes, the variables plotted, and the key values or trend (e.g. peak, minimum,
-  crossover point) with numbers attached where readable. Do not fabricate values you can't actually read.
-- Diagram or flowchart: describe the sequence/flow of steps or components in order, naming each labeled
-  node or box.
-- Photo or screenshot: describe what is concretely shown — objects, layout, visible UI elements — not
-  a subjective or aesthetic read.
-- One dense paragraph, 3-6 sentences. No hedging language ("it appears", "possibly") unless the image
-  is genuinely illegible — in that case say so directly instead of guessing.
+Choosing "type" — pick the single best match, checking in this order:
+1. table_image — the image is a table (grid of rows/columns) rendered as a picture, not markup.
+2. flowchart — connected boxes/nodes with arrows describing a sequence of steps or a decision process.
+3. diagram — labeled components and their relationships, but not a step-by-step sequence (e.g. system
+   architecture, org chart, anatomy).
+4. chart / graph — data plotted against axes (bar, line, pie, scatter).
+5. technical drawing — schematic, blueprint, CAD, wiring, or a dimensioned drawing.
+6. screenshot — a captured UI, application window, or webpage.
+7. photo — a real-world photograph.
+8. other — decorative (logo, divider, icon) or none of the above fit.
 
-If the image is decorative (logo, divider, icon with no informational content), set "type" to "other"
-and keep "description" to one short sentence saying so — don't pad it."""
+Rules for "description" (one dense paragraph, 3-6 sentences; lead with the type noun for keyword
+matchability — e.g. "A flowchart showing..." not throat-clearing like "This is an image of a flowchart."):
+- table_image: treat exactly like a table — name the row/column headers and the standout values, with
+  numbers and labels exactly as shown. Do not compute, round, or infer a value that isn't printed.
+- flowchart / diagram: describe the sequence or structure in order, naming every labeled node/box and
+  each connection between them — what leads to what, what depends on what.
+- chart / graph: name the axes, the variables plotted, and the key values or trend (peak, minimum,
+  crossover point) with numbers attached where readable.
+- technical drawing: name the object/system depicted, its labeled parts, and any dimensions, tolerances,
+  or callouts that are legible.
+- screenshot / photo: describe what is concretely shown — objects, layout, visible UI elements — not a
+  subjective or aesthetic read.
+- Do not fabricate a value, label, or connection you can't actually read. If part of the image is
+  illegible, say so directly for that part instead of guessing — don't hedge the whole description
+  ("it appears", "possibly") over one unclear detail.
+
+If "type" is "other" (decorative), keep "description" to one short sentence saying so — don't pad it.
+
+"text_in_image": transcribe verbatim — same casing, punctuation, and line breaks as shown. Do not
+paraphrase or summarize text that appears in the image; that's what this field is for."""
 
 
 class ImageDescription(BaseModel):
     type: str
     description: str
+    text_in_image: str = ""
 
 
 def describe_image(el: RawElement) -> RawElement:

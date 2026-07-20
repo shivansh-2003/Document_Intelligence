@@ -1,10 +1,12 @@
 # parsing_service.py
 import logging
 from pathlib import Path
+from typing import AsyncIterator
 from uuid import uuid4
 
 from pydantic import BaseModel
 
+from parsing.audio_parser import transcribe_stream
 from parsing.document_parser import DocumentPartitioner
 from pipelines.image_pipeline import describe_images
 from pipelines.table_pipeline import describe_tables
@@ -20,6 +22,7 @@ DOC_TYPES = {
     ".md": "md", ".markdown": "md",
     ".html": "html", ".htm": "html",
 }
+AUDIO_TYPES = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".webm"}
 
 
 class ParsedDocument(BaseModel):
@@ -34,24 +37,33 @@ class ParsedDocument(BaseModel):
 _partitioner = DocumentPartitioner()
 
 
+def _check_identity(doc_id: str, dept_id: str) -> None:
+    """dept_id is the multi-tenant boundary -- it selects the Qdrant collection and
+    the Neo4j label. A chunk that reaches the indexer without one is either
+    unroutable or, worse, routable to the wrong tenant. Fail here, at the trust
+    boundary, rather than trusting every future call site to remember it."""
+    if not doc_id or not doc_id.strip():
+        raise ValueError("doc_id is required")
+    if not dept_id or not dept_id.strip():
+        raise ValueError("dept_id is required")
+
+
+def _tag_chunk(c: Chunk, doc_id: str, dept_id: str, doc_type: str) -> Chunk:
+    c.metadata.chunk_id = "chnk_" + uuid4().hex[:12]
+    c.metadata.doc_id = doc_id
+    c.metadata.dept_id = dept_id
+    c.metadata.doc_type = doc_type
+    return c
+
+
 def parse_document(
     path: str,
     doc_id: str,
     dept_id: str,
     source_name: str | None = None,
 ) -> ParsedDocument:
-    """file -> chunks, fully tagged and ready to embed.
-
-    doc_id and dept_id are REQUIRED, not optional. dept_id is the multi-tenant
-    boundary — it selects the Qdrant collection and the Neo4j label. A chunk that
-    reaches the indexer without one is either unroutable or, worse, routable to the
-    wrong tenant. Fail here, at the trust boundary, rather than trusting every future
-    call site to remember to bolt it on.
-    """
-    if not doc_id or not doc_id.strip():
-        raise ValueError("doc_id is required")
-    if not dept_id or not dept_id.strip():
-        raise ValueError("dept_id is required")
+    """file (pdf/docx/pptx/txt/md/html) -> chunks, fully tagged and ready to embed."""
+    _check_identity(doc_id, dept_id)
 
     p = Path(path)
     if not p.is_file():
@@ -73,8 +85,13 @@ def parse_document(
     describe_tables(elements)          # Table.text -> LLM summary  (md/html tables included)
     describe_images(elements)          # Image.text -> LLM JSON string (no-ops without image bytes)
 
-    chunks = normalize_document(elements)   # filter -> captions -> title grouping -> size cap
-    _tag(chunks, doc_id=doc_id, dept_id=dept_id, doc_type=doc_type)
+    # normalize_document ends with split_oversized, which clones metadata verbatim
+    # across sub-chunks -- so identity is tagged AFTER, once per final chunk, not
+    # before. Tagging before the split would duplicate chunk_id across sub-chunks,
+    # and Qdrant (upsert by id) would silently keep only the last one.
+    chunks = normalize_document(elements)
+    for c in chunks:
+        _tag_chunk(c, doc_id, dept_id, doc_type)
 
     logger.info("Parsed %r into %d chunks %s", source, len(chunks), counts)
     return ParsedDocument(
@@ -83,17 +100,32 @@ def parse_document(
     )
 
 
-def _tag(chunks: list[Chunk], doc_id: str, dept_id: str, doc_type: str) -> None:
-    """Stamp document-scoped identity onto every chunk. In-place; runs once.
+async def parse_audio_stream(
+    path: str,
+    doc_id: str,
+    dept_id: str,
+    source_name: str | None = None,
+) -> AsyncIterator[Chunk]:
+    """audio -> Chunks, yielded as Whisper segments transcribe.
 
-    MUST run after normalize_document, never inside group_by_title. split_oversized
-    (the last step of normalize_document) clones a chunk's metadata verbatim when it
-    splits an oversized text chunk — a chunk_id minted before the split would be
-    duplicated across every sub-chunk, and Qdrant, which upserts by id, would keep
-    only the last one and silently drop the rest.
+    Each chunk already carries its own start_sec/end_sec (assigned per-segment in
+    audio_parser, never cloned by a later split step), so tagging one at a time as
+    they stream in is safe -- unlike the file path, there is no later step that
+    could duplicate a chunk_id across siblings.
     """
-    for c in chunks:
-        c.metadata.chunk_id = "chnk_" + uuid4().hex[:12]
-        c.metadata.doc_id = doc_id
-        c.metadata.dept_id = dept_id
-        c.metadata.doc_type = doc_type
+    _check_identity(doc_id, dept_id)
+
+    p = Path(path)
+    if not p.is_file():
+        raise FileNotFoundError(path)
+    if p.suffix.lower() not in AUDIO_TYPES:
+        raise ValueError(f"unsupported audio type: {p.suffix.lower()}")
+
+    source = source_name or p.name
+    logger.info("Streaming transcription %r doc_id=%s dept_id=%s", source, doc_id, dept_id)
+
+    n = 0
+    async for chunk in transcribe_stream(path, filename=source):
+        n += 1
+        yield _tag_chunk(chunk, doc_id, dept_id, "audio")
+    logger.info("Streamed %r into %d chunks", source, n)
