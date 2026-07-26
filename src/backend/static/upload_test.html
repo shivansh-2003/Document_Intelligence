@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>/parse/batch — test upload</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  label { display: block; margin-top: 1rem; font-weight: 600; }
+  input[type=text] { width: 100%; padding: .4rem; box-sizing: border-box; }
+  button { margin-top: 1rem; padding: .5rem 1.2rem; cursor: pointer; }
+  table { margin-top: 1.5rem; border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: .4rem .6rem; text-align: left; font-size: .9rem; }
+  .ready { color: green; } .failed { color: crimson; } .pending, .processing { color: #a67c00; }
+</style>
+</head>
+<body>
+<h2>POST /parse/batch — real file picker</h2>
+<p>Swagger's "Try it out" widget shows this field as <code>array&lt;string&gt;</code> because of an OpenAPI 3.1 / Swagger UI rendering gap, not because the endpoint is broken. This page hits the same endpoint with real <code>&lt;input type="file" multiple&gt;</code>.</p>
+
+<label>Bearer token (from <code>POST /auth/login</code>)</label>
+<input type="text" id="token" placeholder="eyJhbGciOi...">
+
+<label>dept_id</label>
+<input type="text" id="deptId" placeholder="00000000-0000-0000-0000-000000000000">
+
+<label>Files (select multiple — ctrl/cmd-click, or drag-select)</label>
+<input type="file" id="files" multiple>
+
+<button onclick="upload()">Upload batch</button>
+
+<table id="statusTable" style="display:none">
+  <thead><tr><th>filename</th><th>doc_id</th><th>status</th><th>chunks</th></tr></thead>
+  <tbody id="statusBody"></tbody>
+</table>
+
+<script>
+async function upload() {
+  const token = document.getElementById('token').value.trim();
+  const deptId = document.getElementById('deptId').value.trim();
+  const files = document.getElementById('files').files;
+  if (!token || !deptId || files.length === 0) {
+    alert('token, dept_id, and at least one file are required');
+    return;
+  }
+
+  const form = new FormData();
+  for (const f of files) form.append('files', f);
+  form.append('dept_id', deptId);
+
+  const resp = await fetch('/parse/batch', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + token },
+    body: form,
+  });
+  const data = await resp.json();
+  if (!resp.ok) { alert('upload failed: ' + JSON.stringify(data)); return; }
+
+  const body = document.getElementById('statusBody');
+  body.innerHTML = '';
+  document.getElementById('statusTable').style.display = '';
+  for (const job of data.jobs) {
+    const row = document.createElement('tr');
+    row.id = 'row-' + job.doc_id;
+    row.innerHTML = `<td>${job.filename}</td><td>${job.doc_id}</td><td class="pending">pending</td><td>-</td>`;
+    body.appendChild(row);
+  }
+  data.jobs.forEach(job => pollStatus(token, deptId, job.doc_id));
+}
+
+async function pollStatus(token, deptId, docId) {
+  const row = document.getElementById('row-' + docId);
+  const resp = await fetch(`/departments/${deptId}/documents/${docId}`, {
+    headers: { 'Authorization': 'Bearer ' + token },
+  });
+  const doc = await resp.json();
+  const statusCell = row.children[2];
+  statusCell.textContent = doc.status;
+  statusCell.className = doc.status;
+  row.children[3].textContent = doc.chunk_count ?? '-';
+  if (doc.status === 'pending' || doc.status === 'processing') {
+    setTimeout(() => pollStatus(token, deptId, docId), 2000);
+  }
+}
+</script>
+</body>
+</html>

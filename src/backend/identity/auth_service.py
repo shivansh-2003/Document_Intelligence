@@ -6,15 +6,21 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import create_access_token, hash_password, verify_password
-from models import User
+from models import Company, User
 
 
 class AuthError(Exception):
-    """Bad credentials, inactive user, or duplicate registration. Routers translate
-    this to a 401/409 -- this module stays framework-agnostic."""
+    """Bad credentials, inactive user, duplicate registration, or a referenced
+    company that doesn't exist. Routers translate this to a 401/409 -- this module
+    stays framework-agnostic."""
 
 
 async def register(db: AsyncSession, company_id: uuid.UUID, email: str, password: str) -> User:
+    # Without this check, an unknown company_id reaches Postgres as a raw FK
+    # violation -- an unhandled 500 instead of a clean, expected error.
+    if await db.get(Company, company_id) is None:
+        raise AuthError("company not found")
+
     existing = await db.scalar(select(User).where(User.email == email))
     if existing is not None:
         raise AuthError("email already registered")

@@ -24,3 +24,6 @@ DATABASE_URL = os.getenv(
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-change-me-32-bytes-min")  # ponytail: dev-only default
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")  # None for local dev without auth

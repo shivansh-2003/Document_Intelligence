@@ -14,3 +14,7 @@ asyncpg
 pyjwt
 bcrypt
 python-dotenv
+
+# Phase 4 — indexing + vectorstore
+fastembed
+qdrant-client

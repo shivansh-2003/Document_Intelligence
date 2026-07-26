@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from models import Department, IsolationMode
+from models import Company, Department, IsolationMode
 
 router = APIRouter(prefix="/departments", tags=["departments"])
 
@@ -26,6 +26,12 @@ async def create_department(body: DepartmentRequest, db: AsyncSession = Depends(
     vectorstore/resolver.py's HybridResolver, which doesn't exist until Phase 4 --
     this is a placeholder, not the resolver, so collection naming here will need
     recomputing once that lands."""
+    # Without this check, an unknown company_id reaches Postgres as a raw FK
+    # violation -- an unhandled 500, and the IntegrityError catch below would
+    # misreport it as a naming collision instead of the real problem.
+    if await db.get(Company, body.company_id) is None:
+        raise HTTPException(404, "company not found")
+
     dept_id = uuid.uuid4()
     department = Department(
         id=dept_id,
