@@ -12,6 +12,7 @@ from api.department_router import router as department_router
 from api.documents_router import router as documents_router
 from api.membership_router import router as membership_router
 from api.parsing_router import router as parsing_router
+from api.retrieval_router import router as retrieval_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -22,6 +23,7 @@ app.include_router(department_router)
 app.include_router(documents_router)
 app.include_router(membership_router)
 app.include_router(parsing_router)
+app.include_router(retrieval_router)
 
 # Dev convenience: a real <input type="file" multiple> page for /parse/batch, since
 # Swagger UI's file-picker rendering was flaky pre-fix below -- same-origin mount

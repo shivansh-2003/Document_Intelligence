@@ -17,10 +17,13 @@
 # insufficient, not just for a model-name mismatch.
 import json
 import logging
+import re
 
 from fastembed import SparseTextEmbedding, TextEmbedding
 
 from pipelines.text_pipeline import Chunk
+
+_TAG_RE = re.compile(r"<[^>]+>")
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +65,31 @@ def chunk_embed_text(chunk: Chunk) -> str:
     return chunk.text
 
 
-def embed_batch(texts: list[str]) -> list[dict]:
-    """texts -> [{"dense": [...], "sparse": {"indices": [...], "values": [...]}}, ...]"""
-    dense_vecs = list(_get_dense().embed(texts))
-    sparse_vecs = list(_get_sparse().embed(texts))
+def _clean_html_text(html: str) -> str:
+    """Table HTML -> whitespace-joined cell text, tags stripped."""
+    return " ".join(_TAG_RE.sub(" ", html).split())
+
+
+def chunk_sparse_text(chunk: Chunk) -> str:
+    """What gets sparse-encoded per chunk kind -- table chunks use cleaned cell
+    text instead of chunk_embed_text()'s LLM summary. SPLADE (sparse) is a
+    term-matching model: raw cell values ("$4.2M", "Q3") match exact-value
+    queries far better than summary prose does. Every other kind is identical
+    to chunk_embed_text() -- see context/retrieval.md §7.3."""
+    if chunk.kind == "table" and chunk.metadata.text_as_html:
+        return _clean_html_text(chunk.metadata.text_as_html)
+    return chunk_embed_text(chunk)
+
+
+def embed_batch(dense_texts: list[str], sparse_texts: list[str] | None = None) -> list[dict]:
+    """dense_texts (+ optional distinct sparse_texts, same length/order) ->
+    [{"dense": [...], "sparse": {"indices": [...], "values": [...]}}, ...].
+    sparse_texts defaults to dense_texts -- every caller but
+    vector_store.upsert_chunks wants the same text for both, and passing
+    nothing here keeps their behavior identical to before this param existed."""
+    sparse_texts = sparse_texts or dense_texts
+    dense_vecs = list(_get_dense().embed(dense_texts))
+    sparse_vecs = list(_get_sparse().embed(sparse_texts))
     return [
         {
             "dense": dense.tolist(),

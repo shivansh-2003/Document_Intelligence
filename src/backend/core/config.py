@@ -27,3 +27,18 @@ JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")  # None for local dev without auth
+
+# retrieval — see context/retrieval.md
+RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-base")
+RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", "8"))     # chunks kept after rerank
+FANOUT_TOP_K = int(os.getenv("FANOUT_TOP_K", "40"))    # per-variant hybrid_search limit, pre-merge
+
+RECENCY_HALF_LIFE_DAYS = float(os.getenv("RECENCY_HALF_LIFE_DAYS", "180"))
+CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.35"))
+
+VALKEY_URL = os.getenv("VALKEY_URL", "redis://localhost:6379/0")  # Valkey speaks RESP; redis:// scheme works unchanged
+CACHE_TTL_EMBEDDING = int(os.getenv("CACHE_TTL_EMBEDDING", str(7 * 24 * 3600)))
+CACHE_TTL_RETRIEVAL = int(os.getenv("CACHE_TTL_RETRIEVAL", str(3600)))
+CACHE_TTL_RESPONSE = int(os.getenv("CACHE_TTL_RESPONSE", str(3600)))
+CACHE_TTL_CONVERSATION = int(os.getenv("CACHE_TTL_CONVERSATION", str(3600)))
+RESPONSE_CACHE_SIM_THRESHOLD = float(os.getenv("RESPONSE_CACHE_SIM_THRESHOLD", "0.95"))

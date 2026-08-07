@@ -127,7 +127,7 @@ async def parse_upload(
     # Index before marking ready -- if this raises, the request fails and no Document
     # row gets written, rather than reporting "ready" on a document that isn't
     # actually searchable.
-    await index_chunks(doc.chunks)
+    doc.possible_duplicates = await index_chunks(doc.chunks)
 
     db.add(_new_document(doc_id, membership, file.filename, doc_type, "ready", chunk_count=len(doc.chunks)))
     await db.commit()
@@ -155,9 +155,9 @@ async def _audio_event_stream(path: str, doc_id: str, dept_id: str, source_name:
         async for chunk in parse_audio_stream(path, doc_id=doc_id, dept_id=dept_id, source_name=source_name):
             chunks.append(chunk)
             yield _sse("chunk", chunk.model_dump())
-        await index_chunks(chunks)  # after the client has already seen every chunk
+        possible_duplicates = await index_chunks(chunks)  # after the client has already seen every chunk
         await _mark_document(doc_id, status="ready", chunk_count=len(chunks))
-        yield _sse("done", {"doc_id": doc_id, "chunk_count": len(chunks)})
+        yield _sse("done", {"doc_id": doc_id, "chunk_count": len(chunks), "possible_duplicates": possible_duplicates})
     except Exception as exc:
         logger.exception("audio stream failed doc_id=%s dept_id=%s", doc_id, dept_id)
         await _mark_document(doc_id, status="failed")
@@ -202,20 +202,6 @@ async def parse_upload_stream(
     )
 
 
-# ── POST /parse/batch -- many files, mixed formats, processed concurrently ──
-#
-# BackgroundTasks (FastAPI's built-in) awaits its queued tasks one at a time --
-# fine for "don't block the response," wrong for "process N files at once." Plain
-# asyncio.create_task() per file is what actually overlaps them: each doc-type file's
-# blocking parse call runs in the default thread pool via run_in_executor (same
-# reasoning as utils/async_utils.iter_in_thread for audio), so N files' CPU-bound work
-# can run at the same time instead of queued behind each other.
-#
-# ponytail: in-process, no broker -- an in-flight batch is lost on restart, no retry.
-# Fine at current scale; upgrade path is backend.md Phase 5 (Celery, separate
-# embed/graph_extract queue lanes) once this needs to survive a restart or scale
-# across machines.
-
 _background_tasks: set[asyncio.Task] = set()
 
 
@@ -236,7 +222,12 @@ async def _process_batch_file(doc_id: str, path: str, filename: str, dept_id: st
             loop = asyncio.get_running_loop()
             parsed = await loop.run_in_executor(None, parse_document, path, doc_id, dept_id, filename)
             chunks = parsed.chunks
-        await index_chunks(chunks)
+        possible_duplicates = await index_chunks(chunks)
+        if possible_duplicates:
+            # No response channel back to the caller here (fire-and-forget background
+            # task, status is polled separately) -- informational only, so this is a
+            # log line, not new response-schema plumbing through the polling endpoint.
+            logger.info("doc_id=%s possible duplicates of %s", doc_id, possible_duplicates)
         await _mark_document(doc_id, status="ready", chunk_count=len(chunks))
     except Exception:
         logger.exception("batch processing failed doc_id=%s filename=%r", doc_id, filename)

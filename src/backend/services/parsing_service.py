@@ -32,6 +32,9 @@ class ParsedDocument(BaseModel):
     doc_type: str
     chunks: list[Chunk]
     counts: dict[str, int]
+    # populated by api/parsing_router.py after indexing -- possible-duplicate
+    # doc_ids from ingestion_versioning.supersession, informational only
+    possible_duplicates: list[str] = []
 
 
 _partitioner = DocumentPartitioner()
